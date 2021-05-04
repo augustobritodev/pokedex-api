@@ -1,18 +1,26 @@
+import express from 'express';
 import dotenv from 'dotenv-safe';
-import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import session from 'express-session';
-import mongoose, { Error, NativeError, Document } from 'mongoose';
+import mongoose, { Error, NativeError } from 'mongoose';
 import passport from 'passport';
-import passportLocal, { IVerifyOptions } from 'passport-local';
+import passportLocal from 'passport-local';
 import { compare } from 'bcrypt';
+import { API, SERVER } from '@src/config/env';
+import Logger from '@src/config/logger';
+import morganConfig from '@src/config/morgan';
 import User, { IUser } from '@src/models/User';
-import PasswordService from '@src/services/password.service';
+import authRoutes from '@src/routes/auth.route';
+import pokemonRoutes from '@src/routes/pokemon.route';
 
 const LocalStrarategy = passportLocal.Strategy;
 
 dotenv.config();
 
 const app = express();
+
+app.use(cors());
+app.use(morganConfig);
 
 mongoose.connect(
   'mongodb+srv://augustobrito:@AB91mongo,.;@pokedex-cluster-0.hlivn.mongodb.net/pokedex-db?retryWrites=true&w=majority',
@@ -69,48 +77,14 @@ passport.use(
   })
 );
 
-app.post('/auth/register', async (req: Request, res: Response) => {
-  const { name, surname, email, password }: IUser = req.body;
+app.use(API.prefix, authRoutes());
+app.use(API.prefix, pokemonRoutes());
 
-  // TODO: Add validation with JOI
-  if (!name || !surname || !email || !password) {
-    return res.json({ message: 'Todos os campos precisam serem preenchidos!' });
-  }
-
-  User.findOne({ email }, async (err: Error, user: IUser) => {
-    if (err) return res.json(err);
-    if (user) return res.json({ message: 'Email já cadastrado!' });
-
-    const hash = await PasswordService.genHash(password);
-    const newUser = new User({
-      name,
-      surname,
-      email,
-      password: hash,
-    });
-
-    await newUser.save();
-    return res.status(200).json({ message: 'Usuário criado com sucesso' });
+app
+  .listen(SERVER.port, SERVER.hostname, () => {
+    Logger.info(`Server listening on ${SERVER.hostname}:${SERVER.port}`);
+  })
+  .on('error', err => {
+    Logger.error(err.message, err);
+    process.exit(1);
   });
-});
-
-app.post('/auth/login', (req: Request, res: Response, next: NextFunction) => {
-  passport.authenticate('local', (err: Error, user: IUser, info: IVerifyOptions) => {
-    if (err) {
-      return next(err);
-    }
-
-    if (!user) {
-      return res.status(401).json(info);
-    }
-
-    req.logIn(user, error => {
-      if (error) {
-        return next(err);
-      }
-      return res.status(200).json({ message: 'Logged in' });
-    });
-  })(req, res, next);
-});
-
-app.listen(3333);
